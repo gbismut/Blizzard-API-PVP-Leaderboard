@@ -1,5 +1,19 @@
 library(httr)
 library(tidyverse)
+library(writexl)
+library(dbplyr)
+library(dplyr)
+
+
+
+#Load Database
+slb <- DBI::dbConnect(RSQLite::SQLite(), "SoloShuffleLeaderboard.db") #slb = shuffle leaderboard
+src_dbi(slb)
+tbl(slb, sql("SELECT * FROM `SoloShuffle2023-03-22`"))
+my_db_file = "SoloShuffleLeaderboard.db"
+my_db <- src_sqlite(my_db_file)
+
+
 
 #Function to call Blizzard API
 blizz <- function(endpoint, locale = "en_US", namespace = NULL, json = FALSE) {
@@ -55,9 +69,7 @@ for(i in PlayableSpecs$Concatenate){
   SoloShuffle = bind_rows(SoloShuffle, tmp_df)
 }
 
-#Interesting idea
-#Daily Batch, check if total played games has changed 
-#Can check if total played games hasnt changed over a week
+#Convert to numeric
 ShuffleStats = SoloShuffle
 ShuffleStats$entries.season_match_statistics$won = as.numeric(ShuffleStats$entries.season_match_statistics$won)
 ShuffleStats$entries.season_match_statistics$played = as.numeric(ShuffleStats$entries.season_match_statistics$played)
@@ -74,17 +86,19 @@ WinRateSpec = ShuffleStats %>%
     NumberOfMatchesPlayed = sum(entries.season_match_statistics$played),
     AvgRating = mean(entries.rating),
     MinRating = min(entries.rating),
-    maxRating = max(entries.rating)
+    MaxRating = max(entries.rating)
   )
 
-colnames(SoloShuffle)
 
-View(WinRateSpec)
 WinRateSpec$name = gsub('shuffle-','', WinRateSpec$name)
-unique(WinRateSpec$name)
+
 ggplot(data=WinRateSpec, aes(x=name, y=AvgWinRate)) +
   geom_bar(stat="identity")+
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#Write to db/excel
+copy_to(my_db, WinRateSpec, name = paste0(SoloShuffle,Sys.Date()))
+write_xlsx(as.data.frame(WinRateSpec), path = paste0("SoloShuffle",Sys.Date(),".xlsx"))
 
 #3v3
 threes = blizz("/data/wow/pvp-season/34/pvp-leaderboard/3v3", "en_US", "dynamic-us", json = FALSE)
