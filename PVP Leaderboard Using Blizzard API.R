@@ -1,3 +1,5 @@
+rm(list = ls())
+
 library(httr)
 library(tidyverse)
 library(writexl)
@@ -76,10 +78,13 @@ ShuffleStats$entries.season_match_statistics$played = as.numeric(ShuffleStats$en
 ShuffleStats$WinRate = (ShuffleStats$entries.season_match_statistics$won/ShuffleStats$entries.season_match_statistics$played)*100
 ShuffleStats$entries.rating = as.numeric(ShuffleStats$entries.rating)
 
+#Unlist CharID to merge later
+ShuffleStats$CharID = unlist(ShuffleStats$entries.character$id)
+
 #See Win Rate by Spec
 WinRateSpec = ShuffleStats %>% 
   group_by(name) %>% 
-  summarise(
+  dplyr::summarise(
     AvgWinRate = mean(WinRate),
     MedianWinRate = median(WinRate),
     CountOfPlayers = n(),
@@ -94,17 +99,79 @@ WinRateSpec$name = gsub('shuffle-','', WinRateSpec$name)
 
 ggplot(data=WinRateSpec, aes(x=name, y=AvgWinRate)) +
   geom_bar(stat="identity")+
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  aes(x = reorder(name, AvgWinRate),decreasing = TRUE)
 
-#Write to db/excel
-copy_to(my_db, WinRateSpec, name = paste0(SoloShuffle,Sys.Date()))
-write_xlsx(as.data.frame(WinRateSpec), path = paste0("SoloShuffle",Sys.Date(),".xlsx"))
 
 #3v3
-threes = blizz("/data/wow/pvp-season/34/pvp-leaderboard/3v3", "en_US", "dynamic-us", json = FALSE)
-threes = as.data.frame(threes)
+ThreesAPI = blizz("/data/wow/pvp-season/34/pvp-leaderboard/3v3", "en_US", "dynamic-us", json = FALSE)
+ThreesAPI <-  as.data.frame(do.call(cbind, ThreesAPI))
+ThreesChar = as.data.frame(ThreesAPI$entries.character)
+ThreesMatchStats = as.data.frame(ThreesAPI$entries.season_match_statistics)
+ThreesCleaned = data.frame(CharName = unlist(ThreesChar$name),
+                         CharID = unlist(ThreesChar$id),
+                         RealmID = unlist(ThreesChar$realm$id),
+                         RealmName = unlist(ThreesChar$realm$slug),
+                         Faction = unlist(ThreesAPI$entries.faction$type),
+                         Rank = unlist(ThreesAPI$entries.rank),
+                         ThreesRating = unlist(ThreesAPI$entries.rating),
+                         ThreesPlayed = unlist(ThreesMatchStats$played),
+                         ThreesWon = unlist(ThreesMatchStats$won),
+                         ThreesLost = unlist(ThreesMatchStats$lost)
+)
 
-ArmsWarrior = blizz("/data/wow/pvp-season/34/pvp-leaderboard/shuffle-warrior-arms", "en_US", "dynamic-us", json=FALSE)
+ThreesClassSpec = merge(x=ThreesCleaned,y=ShuffleStats, by="CharID")
+ThreesStats = ThreesClassSpec %>% 
+              group_by(name) %>% 
+              dplyr::summarise(
+                AvgWinRate = mean(WinRate),
+                MedianWinRate = median(WinRate),
+                CountOfPlayers = n(),
+                NumberOfMatchesPlayed = sum(entries.season_match_statistics$played),
+                AvgRating = mean(entries.rating),
+                MinRating = min(entries.rating),
+                MaxRating = max(entries.rating)
+              )
 
-View(ArmsWarrior)
-View(as.data.frame(ArmsWarrior))
+#2v2
+TwosAPI = blizz("/data/wow/pvp-season/34/pvp-leaderboard/2v2", "en_US", "dynamic-us", json = FALSE)
+TwosAPI <-  as.data.frame(do.call(cbind, TwosAPI))
+TwosChar = as.data.frame(TwosAPI$entries.character)
+TwosMatchStats = as.data.frame(TwosAPI$entries.season_match_statistics)
+TwosCleaned = data.frame(CharName = unlist(TwosChar$name),
+                  CharID = unlist(TwosChar$id),
+                  RealmID = unlist(TwosChar$realm$id),
+                  RealmName = unlist(TwosChar$realm$slug),
+                  Faction = unlist(TwosAPI$entries.faction),
+                  Rank = unlist(TwosAPI$entries.rank),
+                  TwosRating = unlist(TwosAPI$entries.rating),
+                  TwosPlayed = unlist(TwosMatchStats$played),
+                  TwosWon = unlist(TwosMatchStats$won),
+                  TwosLost = unlist(TwosMatchStats$lost)
+                  )
+
+TwosClassSpec = merge(x=TwosCleaned,y=ShuffleStats, by="CharID")
+
+TwosStats = TwosClassSpec %>% 
+  group_by(name) %>% 
+  dplyr::summarise(
+    AvgWinRate = mean(WinRate),
+    MedianWinRate = median(WinRate),
+    CountOfPlayers = n(),
+    NumberOfMatchesPlayed = sum(entries.season_match_statistics$played),
+    AvgRating = mean(entries.rating),
+    MinRating = min(entries.rating),
+    MaxRating = max(entries.rating)
+  )
+
+#Write to db/excel
+copy_to(my_db, WinRateSpec, name = paste0("SoloShuffle",Sys.Date()))
+copy_to(my_db, ThreesStats, name = paste0("Threes",Sys.Date()))
+copy_to(my_db, TwosStats, name = paste0("Twos",Sys.Date()))
+
+write_xlsx(as.data.frame(WinRateSpec), path = paste0("SoloShuffle",Sys.Date(),".xlsx"))
+write_xlsx(as.data.frame(ThreesCleaned), path = paste0("ThreesRowLevel",Sys.Date(),".xlsx"))
+write_xlsx(as.data.frame(ThreesStats), path = paste0("ThreesStats",Sys.Date(),".xlsx"))
+write_xlsx(as.data.frame(TwosCleaned), path = paste0("TwosRowLevel",Sys.Date(),".xlsx"))
+write_xlsx(as.data.frame(TwosStats), path = paste0("TwosStats",Sys.Date(),".xlsx"))
+
