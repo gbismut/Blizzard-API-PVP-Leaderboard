@@ -1,4 +1,5 @@
 rm(list = ls())
+setwd("~/GitHub/Blizzard API")
 
 library(httr)
 library(tidyverse)
@@ -55,6 +56,7 @@ for(i in unlist(unique(Specs$character_specializations.id))){
   PlayableSpecs=bind_rows(PlayableSpecs, newData)
 }
 
+
 #Concatenate class and spec, then remove white space
 PlayableSpecs$Concatenate = paste0(tolower(PlayableSpecs$Class),"-",tolower(PlayableSpecs$Spec))
 PlayableSpecs$Concatenate = str_replace_all(PlayableSpecs$Concatenate, fixed(" "), "")
@@ -80,6 +82,10 @@ ShuffleStats$entries.rating = as.numeric(ShuffleStats$entries.rating)
 
 #Unlist CharID to merge later
 ShuffleStats$CharID = unlist(ShuffleStats$entries.character$id)
+ShuffleStats$ShufflePlayed = unlist(ShuffleStats$entries.season_match_statistics$played)
+ShuffleStats$ShuffleWon = unlist(ShuffleStats$entries.season_match_statistics$won)
+ShuffleStats$ShuffleLost = unlist(ShuffleStats$entries.season_match_statistics$lost)
+
 
 #See Win Rate by Spec
 WinRateSpec = ShuffleStats %>% 
@@ -170,8 +176,8 @@ copy_to(my_db, ThreesStats, name = paste0("Threes",Sys.Date()))
 copy_to(my_db, TwosStats, name = paste0("Twos",Sys.Date()))
 
 write_xlsx(as.data.frame(WinRateSpec), path = paste0("SoloShuffle",Sys.Date(),".xlsx"))
-write_xlsx(as.data.frame(ThreesCleaned), path = paste0("ThreesRowLevel",Sys.Date(),".xlsx"))
+write_xlsx(as.data.frame(ThreesClassSpec), path = paste0("ThreesRowLevel",Sys.Date(),".xlsx"))
 write_xlsx(as.data.frame(ThreesStats), path = paste0("ThreesStats",Sys.Date(),".xlsx"))
-write_xlsx(as.data.frame(TwosCleaned), path = paste0("TwosRowLevel",Sys.Date(),".xlsx"))
+write_xlsx(as.data.frame(TwosClassSpec), path = paste0("TwosRowLevel",Sys.Date(),".xlsx"))
 write_xlsx(as.data.frame(TwosStats), path = paste0("TwosStats",Sys.Date(),".xlsx"))
 
