@@ -6,10 +6,14 @@ library(tidyverse)
 library(writexl)
 library(dbplyr)
 library(dplyr)
+library(readxl)
+library(RPostgreSQL)
 
-
+#Need to create master file, union masterfile with new batches
+#Maybe pull in player pvp API
 
 #Load Database
+drv = dbDriver("PostgreSQL")
 slb <- DBI::dbConnect(RSQLite::SQLite(), "SoloShuffleLeaderboard.db") #slb = shuffle leaderboard
 src_dbi(slb)
 tbl(slb, sql("SELECT * FROM `SoloShuffle2023-03-22`"))
@@ -103,11 +107,16 @@ WinRateSpec = ShuffleStats %>%
 
 WinRateSpec$name = gsub('shuffle-','', WinRateSpec$name)
 
+WinRateSpec$BatchDate = Sys.Date()
+
 ggplot(data=WinRateSpec, aes(x=name, y=AvgWinRate)) +
   geom_bar(stat="identity")+
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
   aes(x = reorder(name, AvgWinRate),decreasing = TRUE)
 
+SSMaster <- read_excel("Batches/SSMasterFile.xlsx")
+
+SSMasterFile = rbind(SSMaster, WinRateSpec)
 
 #3v3
 ThreesAPI = blizz("/data/wow/pvp-season/34/pvp-leaderboard/3v3", "en_US", "dynamic-us", json = FALSE)
@@ -127,6 +136,12 @@ ThreesCleaned = data.frame(CharName = unlist(ThreesChar$name),
 )
 
 ThreesClassSpec = merge(x=ThreesCleaned,y=ShuffleStats, by="CharID")
+ThreesClassSpec$BatchDate = Sys.Date()
+
+#Merge with Master File
+ThreesMaster <- read_excel("Batches/ThreesMasterFile.xlsx")
+ThreesMasterFile = bind_rows(ThreesMaster, ThreesClassSpec)
+
 ThreesStats = ThreesClassSpec %>% 
               group_by(name) %>% 
               dplyr::summarise(
@@ -138,6 +153,12 @@ ThreesStats = ThreesClassSpec %>%
                 MinRating = min(entries.rating),
                 MaxRating = max(entries.rating)
               )
+ThreesStats$BatchDate = Sys.Date()
+
+#Merge with Aggregate Master File
+ThreesStatsMaster = read_excel("Batches/ThreesStatsMasterFile.xlsx")
+ThreesStatsMasterFile = bind_rows(ThreesStatsMaster, ThreesStats)
+
 
 #2v2
 TwosAPI = blizz("/data/wow/pvp-season/34/pvp-leaderboard/2v2", "en_US", "dynamic-us", json = FALSE)
@@ -157,6 +178,11 @@ TwosCleaned = data.frame(CharName = unlist(TwosChar$name),
                   )
 
 TwosClassSpec = merge(x=TwosCleaned,y=ShuffleStats, by="CharID")
+TwosClassSpec$BatchDate = Sys.Date()
+
+#Merge with Masterfile
+TwosMaster <- read_excel("Batches/TwosMasterFile.xlsx")
+TwosMasterFile = bind_rows(TwosMaster, TwosClassSpec)
 
 TwosStats = TwosClassSpec %>% 
   group_by(name) %>% 
@@ -169,15 +195,20 @@ TwosStats = TwosClassSpec %>%
     MinRating = min(entries.rating),
     MaxRating = max(entries.rating)
   )
+TwosStats$BatchDate = Sys.Date()
+
+#Merge with Aggregate Master File
+TwosStatsMaster <- read_excel("Batches/TwosStatsMasterFile.xlsx")
+TwosStatsMasterFile = bind_rows(TwosStatsMaster, TwosStats)
 
 #Write to db/excel
 copy_to(my_db, WinRateSpec, name = paste0("SoloShuffle",Sys.Date()))
 copy_to(my_db, ThreesStats, name = paste0("Threes",Sys.Date()))
 copy_to(my_db, TwosStats, name = paste0("Twos",Sys.Date()))
 
-write_xlsx(as.data.frame(WinRateSpec), path = paste0("SoloShuffle",Sys.Date(),".xlsx"))
-write_xlsx(as.data.frame(ThreesClassSpec), path = paste0("ThreesRowLevel",Sys.Date(),".xlsx"))
-write_xlsx(as.data.frame(ThreesStats), path = paste0("ThreesStats",Sys.Date(),".xlsx"))
-write_xlsx(as.data.frame(TwosClassSpec), path = paste0("TwosRowLevel",Sys.Date(),".xlsx"))
-write_xlsx(as.data.frame(TwosStats), path = paste0("TwosStats",Sys.Date(),".xlsx"))
+write_xlsx(as.data.frame(SSMasterFile), path = paste0("Batches/SSMasterFile.xlsx"))
+write_xlsx(as.data.frame(ThreesMasterFile), path = paste0("Batches/ThreesMasterFile.xlsx"))
+write_xlsx(as.data.frame(ThreesStatsMasterFile), path = paste0("Batches/ThreesStatsMasterFile.xlsx"))
+write_xlsx(as.data.frame(TwosMasterFile), path = paste0("Batches/TwosMasterFile.xlsx"))
+write_xlsx(as.data.frame(TwosStatsMasterFile), path = paste0("Batches/TwosStatsMasterFile.xlsx"))
 
