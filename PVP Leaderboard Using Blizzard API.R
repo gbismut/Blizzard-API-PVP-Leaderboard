@@ -8,18 +8,24 @@ library(dbplyr)
 library(dplyr)
 library(readxl)
 library(RPostgreSQL)
+library(curl)
+library(DBI)
 
-#Need to create master file, union masterfile with new batches
-#Maybe pull in player pvp API
+
+#Authentication Token
+x =httr::POST(
+  url = ("https://oauth.battle.net/token"),
+  authenticate(Sys.getenv('BLIZZARD_CLIENT_ID'),Sys.getenv('BLIZZARD_CLIENT_SECRET')),
+  body = list(grant_type='client_credentials')
+)
+x <- httr::content(x) # grab the request content
+acc_token=unlist(x[1])
 
 #Load Database
 drv = dbDriver("PostgreSQL")
 slb <- DBI::dbConnect(RSQLite::SQLite(), "SoloShuffleLeaderboard.db") #slb = shuffle leaderboard
-src_dbi(slb)
-tbl(slb, sql("SELECT * FROM `SoloShuffle2023-03-22`"))
-my_db_file = "SoloShuffleLeaderboard.db"
-my_db <- src_sqlite(my_db_file)
-
+tsdb <- DBI::dbConnect(RSQLite::SQLite(), "ThreesStats.db") #threesdb
+twosdb = DBI::dbConnect(RSQLite::SQLite(), "TwosStats.db") #twosdb
 
 
 #Function to call Blizzard API
@@ -29,7 +35,7 @@ blizz <- function(endpoint, locale = "en_US", namespace = NULL, json = FALSE) {
     query = list(
       namespace = namespace,
       locale = locale,
-      access_token = Sys.getenv("BLIZZARD_AUTH_TOKEN")
+      access_token = acc_token
     )
   )
   
@@ -206,9 +212,50 @@ copy_to(my_db, WinRateSpec, name = paste0("SoloShuffle",Sys.Date()))
 copy_to(my_db, ThreesStats, name = paste0("Threes",Sys.Date()))
 copy_to(my_db, TwosStats, name = paste0("Twos",Sys.Date()))
 
+
+
+##Checks if DB exists and then creates table
+if(!DBI::dbExistsTable(slb, 'Solo Shuffle Leaderboard')) {
+  WinRateSpec %>% 
+    DBI::dbCreateTable(
+      conn = slb,
+      name = 'Solo Shuffle Leaderboard',
+      fields = .
+    )
+}
+
+#If want to remove tables
+# DBI::dbRemoveTable(
+#   conn = slb,
+#   name = c("SoloShuffle2023-03-22")
+# )
+
+#Append table
+WinRateSpec %>% 
+  DBI::dbAppendTable(
+    conn = slb,
+    name = 'Solo Shuffle Leaderboard',
+    value = .
+  )
+
+ThreesStats %>% 
+  DBI::dbAppendTable(
+    conn = tsdb,
+    name = 'Threes Leaderboard',
+    value = .
+  )
+
+TwosStats%>% 
+  DBI::dbAppendTable(
+    conn = twosdb,
+    name = 'Twos Leaderboard',
+    value = .
+  )
+
 write_xlsx(as.data.frame(SSMasterFile), path = paste0("Batches/SSMasterFile.xlsx"))
 write_xlsx(as.data.frame(ThreesMasterFile), path = paste0("Batches/ThreesMasterFile.xlsx"))
 write_xlsx(as.data.frame(ThreesStatsMasterFile), path = paste0("Batches/ThreesStatsMasterFile.xlsx"))
 write_xlsx(as.data.frame(TwosMasterFile), path = paste0("Batches/TwosMasterFile.xlsx"))
 write_xlsx(as.data.frame(TwosStatsMasterFile), path = paste0("Batches/TwosStatsMasterFile.xlsx"))
+
 
